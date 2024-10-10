@@ -121,7 +121,7 @@ class _MobileWorkspace extends StatelessWidget {
           },
           child: Row(
             children: [
-              WorkspaceIconV2(
+              WorkspaceIcon(
                 workspace: currentWorkspace,
                 iconSize: 36,
                 fontSize: 18.0,
@@ -165,6 +165,8 @@ class _MobileWorkspace extends StatelessWidget {
       showDragHandle: true,
       showCloseButton: true,
       useRootNavigator: true,
+      enableScrollable: true,
+      bottomSheetPadding: context.bottomSheetPadding(),
       title: LocaleKeys.workspace_menuTitle.tr(),
       backgroundColor: Theme.of(context).colorScheme.surface,
       builder: (sheetContext) {

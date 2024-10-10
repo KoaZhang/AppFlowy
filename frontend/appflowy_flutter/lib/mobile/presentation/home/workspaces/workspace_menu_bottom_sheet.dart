@@ -272,7 +272,7 @@ class _WorkspaceMenuItemIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4.0),
-      child: WorkspaceIconV2(
+      child: WorkspaceIcon(
         enableEdit: false,
         iconSize: 36,
         emojiSize: 24.0,
@@ -320,7 +320,6 @@ class _WorkspaceMenuItemTrailing extends StatelessWidget {
           child: const FlowySvg(
             FlowySvgs.workspace_three_dots_s,
             size: iconSize,
-            blendMode: null,
           ),
         ),
         const HSpace(8.0),

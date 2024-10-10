@@ -7,13 +7,13 @@ import {
   LoadViewMeta,
   UserWorkspaceInfo,
   View,
-  ViewLayout,
+  ViewLayout, YjsDatabaseKey, YjsEditorKey, YSharedRoot,
 } from '@/application/types';
 import { findAncestors, findView, findViewByLayout } from '@/components/_shared/outline/utils';
 import RequestAccess from '@/components/app/landing-pages/RequestAccess';
 import { AFConfigContext, useService } from '@/components/main/app.hooks';
 import { uniqBy } from 'lodash-es';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
@@ -31,10 +31,14 @@ export interface AppContextType {
   appendBreadcrumb?: AppendBreadcrumb;
   loadFavoriteViews?: () => Promise<void>;
   loadRecentViews?: () => Promise<void>;
+  loadTrash?: (workspaceId: string) => Promise<void>;
   favoriteViews?: View[];
   recentViews?: View[];
+  trashList?: View[];
   rendered?: boolean;
   onRendered?: () => void;
+  notFound?: boolean;
+  viewHasBeenDeleted?: boolean;
 }
 
 const USER_NO_ACCESS_CODE = [1024, 1012];
@@ -56,6 +60,16 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [outline, setOutline] = useState<View[]>();
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
+  const [trashList, setTrashList] = React.useState<View[]>();
+  const viewHasBeenDeleted = useMemo(() => {
+    if (!viewId) return false;
+    return trashList?.some((v) => v.view_id === viewId);
+  }, [trashList, viewId]);
+  const viewNotFound = useMemo(() => {
+    if (!viewId || !outline) return false;
+    return !findView(outline, viewId);
+  }, [outline, viewId]);
+
   const createdRowKeys = useRef<string[]>([]);
   const [requestAccessOpened, setRequestAccessOpened] = useState(false);
   const [rendered, setRendered] = useState(false);
@@ -172,6 +186,17 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error('View not found');
       }
 
+      const sharedRoot = res.get(YjsEditorKey.data_section) as YSharedRoot;
+      let objectId = id;
+
+      if (sharedRoot.has(YjsEditorKey.database)) {
+        const database = sharedRoot.get(YjsEditorKey.database);
+
+        objectId = database?.get(YjsDatabaseKey.id);
+      }
+
+      service.registerDocUpdate(res, currentWorkspaceId, objectId);
+
       return res;
       // eslint-disable-next-line
     } catch (e: any) {
@@ -183,12 +208,18 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   const createRowDoc = useCallback(
     async (rowKey: string) => {
+      if (!currentWorkspaceId || !service) {
+        throw new Error('Failed to create row doc');
+      }
+
       try {
-        const doc = await service?.createRowDoc(rowKey);
+        const doc = await service.createRowDoc(rowKey);
 
         if (!doc) {
           throw new Error('Failed to create row doc');
         }
+
+        service.registerDocUpdate(doc, currentWorkspaceId, rowKey);
 
         createdRowKeys.current.push(rowKey);
         return doc;
@@ -196,7 +227,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         return Promise.reject(e);
       }
     },
-    [service],
+    [currentWorkspaceId, service],
   );
 
   const loadUserWorkspaceInfo = useCallback(async () => {
@@ -235,9 +266,16 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       try {
 
         await service.openWorkspace(workspaceId);
-        const path = window.location.pathname.split('/')[2];
+        const wId = window.location.pathname.split('/')[2];
+        const pageId = window.location.pathname.split('/')[3];
 
-        if (path && !uuidValidate(path)) {
+        // skip /app/trash and /app/*other-pages
+        if (wId && !uuidValidate(wId)) {
+          return;
+        }
+
+        // skip /app/:workspaceId/:pageId
+        if (pageId && uuidValidate(pageId) && wId && uuidValidate(wId) && wId === workspaceId) {
           return;
         }
 
@@ -299,11 +337,33 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [currentWorkspaceId, service]);
 
+  const loadTrash = useCallback(async (currentWorkspaceId: string) => {
+
+    if (!service) return;
+    try {
+      const res = await service?.getAppTrash(currentWorkspaceId);
+
+      if (!res) {
+        throw new Error('App trash not found');
+      }
+
+      setTrashList(res);
+    } catch (e) {
+      return Promise.reject('App trash not found');
+    }
+  }, [service]);
+
   useEffect(() => {
     if (!currentWorkspaceId) return;
     void loadOutline(currentWorkspaceId);
-
-  }, [loadOutline, currentWorkspaceId]);
+    void (async () => {
+      try {
+        await loadTrash(currentWorkspaceId);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, [loadOutline, currentWorkspaceId, loadTrash]);
 
   useEffect(() => {
     void loadUserWorkspaceInfo().then(res => {
@@ -335,19 +395,36 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       loadView,
       loadFavoriteViews,
       loadRecentViews,
+      loadTrash,
       favoriteViews,
       recentViews,
+      trashList,
       appendBreadcrumb,
       breadcrumbs,
       userWorkspaceInfo,
       onChangeWorkspace,
       rendered,
       onRendered,
+      notFound: viewNotFound,
+      viewHasBeenDeleted,
     }}
   >
     {requestAccessOpened ? <RequestAccess /> : children}
   </AppContext.Provider>;
 };
+
+export function useViewErrorStatus () {
+  const context = useContext(AppContext);
+
+  if (!context) {
+    throw new Error('useBreadcrumb must be used within an AppProvider');
+  }
+
+  return {
+    notFound: context.notFound,
+    deleted: context.viewHasBeenDeleted,
+  };
+}
 
 export function useBreadcrumb () {
   const context = useContext(AppContext);
@@ -452,5 +529,18 @@ export function useAppRecent () {
   return {
     loadRecentViews: context.loadRecentViews,
     recentViews: context.recentViews,
+  };
+}
+
+export function useAppTrash () {
+  const context = useContext(AppContext);
+
+  if (!context) {
+    throw new Error('useAppTrash must be used within an AppProvider');
+  }
+
+  return {
+    loadTrash: context.loadTrash,
+    trashList: context.trashList,
   };
 }

@@ -57,7 +57,8 @@ class AppFlowyEditorPage extends StatefulWidget {
   State<AppFlowyEditorPage> createState() => _AppFlowyEditorPageState();
 }
 
-class _AppFlowyEditorPageState extends State<AppFlowyEditorPage> {
+class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
+    with WidgetsBindingObserver {
   late final ScrollController effectiveScrollController;
 
   late final InlineActionsService inlineActionsService = InlineActionsService(
@@ -122,9 +123,13 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage> {
 
   AFFocusManager? focusManager;
 
+  AppLifecycleState? lifecycleState = WidgetsBinding.instance.lifecycleState;
+  List<Selection?> previousSelections = [];
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     if (widget.useViewInfoBloc) {
       viewInfoBloc.add(
@@ -162,6 +167,8 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage> {
     // customize the dynamic theme color
     _customizeBlockComponentBackgroundColorDecorator();
 
+    widget.editorState.selectionNotifier.addListener(onSelectionChanged);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -180,6 +187,34 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage> {
     });
   }
 
+  void onSelectionChanged() {
+    if (widget.editorState.isDisposed) {
+      return;
+    }
+
+    previousSelections.add(widget.editorState.selection);
+
+    if (previousSelections.length > 2) {
+      previousSelections.removeAt(0);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    lifecycleState = state;
+
+    if (widget.editorState.isDisposed) {
+      return;
+    }
+
+    if (previousSelections.length == 2 &&
+        state == AppLifecycleState.resumed &&
+        widget.editorState.selection == null) {
+      widget.editorState.selection = previousSelections.first;
+    }
+  }
+
   @override
   void didChangeDependencies() {
     final currFocusManager = AFFocusManager.maybeOf(context);
@@ -195,12 +230,12 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage> {
   @override
   void reassemble() {
     super.reassemble();
-
     slashMenuItems = _customSlashMenuItems();
   }
 
   @override
   void dispose() {
+    widget.editorState.selectionNotifier.removeListener(onSelectionChanged);
     widget.editorState.service.keyboardService?.unregisterInterceptor(
       editorKeyboardInterceptor,
     );
@@ -346,6 +381,8 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage> {
       dateOrReminderSlashMenuItem,
       photoGallerySlashMenuItem,
       fileSlashMenuItem,
+      // disable subPageSlashMenuItem temporarily, enable it in version 0.7.2
+      // subPageSlashMenuItem,
     ];
   }
 

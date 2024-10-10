@@ -1,6 +1,3 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
@@ -10,13 +7,58 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/custom_image_block_component/custom_image_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/multi_image_block_component/multi_image_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/sub_page/sub_page_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:flowy_infra/theme_extension.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:universal_platform/universal_platform.dart';
+
+enum EditorOptionActionType {
+  turnInto,
+  color,
+  align,
+  depth;
+
+  Set<String> get supportTypes {
+    switch (this) {
+      case EditorOptionActionType.turnInto:
+        return {
+          ParagraphBlockKeys.type,
+          HeadingBlockKeys.type,
+          QuoteBlockKeys.type,
+          CalloutBlockKeys.type,
+          BulletedListBlockKeys.type,
+          NumberedListBlockKeys.type,
+          TodoListBlockKeys.type,
+        };
+      case EditorOptionActionType.color:
+        return {
+          ParagraphBlockKeys.type,
+          HeadingBlockKeys.type,
+          BulletedListBlockKeys.type,
+          NumberedListBlockKeys.type,
+          QuoteBlockKeys.type,
+          TodoListBlockKeys.type,
+          CalloutBlockKeys.type,
+          OutlineBlockKeys.type,
+          ToggleListBlockKeys.type,
+        };
+      case EditorOptionActionType.align:
+        return {
+          ImageBlockKeys.type,
+        };
+      case EditorOptionActionType.depth:
+        return {
+          OutlineBlockKeys.type,
+        };
+    }
+  }
+}
 
 Map<String, BlockComponentBuilder> getEditorBuilderMap({
   required BuildContext context,
@@ -28,7 +70,14 @@ Map<String, BlockComponentBuilder> getEditorBuilderMap({
   String Function(Node)? placeholderText,
   EdgeInsets? customHeadingPadding,
 }) {
-  final standardActions = [OptionAction.delete, OptionAction.duplicate];
+  final standardActions = [
+    OptionAction.delete,
+    OptionAction.duplicate,
+    // Copy link to block feature is disable temporarily, enable this test when the feature is ready.
+    // filter out the copy link to block option if in local mode
+    // if (context.read<DocumentBloc?>()?.isLocalMode != true)
+    //   OptionAction.copyLinkToBlock,
+  ];
 
   final calloutBGColor = AFThemeExtension.of(context).calloutBGColor;
   final configuration = BlockComponentConfiguration(
@@ -257,6 +306,9 @@ Map<String, BlockComponentBuilder> getEditorBuilderMap({
       ),
     ),
     FileBlockKeys.type: FileBlockComponentBuilder(configuration: configuration),
+    SubPageBlockKeys.type: SubPageBlockComponentBuilder(
+      configuration: configuration,
+    ),
     errorBlockComponentBuilderKey: ErrorBlockComponentBuilder(
       configuration: configuration,
     ),
@@ -275,30 +327,21 @@ Map<String, BlockComponentBuilder> getEditorBuilderMap({
       }
       final builder = entry.value;
 
-      // customize the action builder.
-      final supportColorBuilderTypes = [
-        ParagraphBlockKeys.type,
-        HeadingBlockKeys.type,
-        BulletedListBlockKeys.type,
-        NumberedListBlockKeys.type,
-        QuoteBlockKeys.type,
-        TodoListBlockKeys.type,
-        CalloutBlockKeys.type,
-        OutlineBlockKeys.type,
-        ToggleListBlockKeys.type,
-      ];
-
-      final supportAlignBuilderType = [ImageBlockKeys.type];
-      final supportDepthBuilderType = [OutlineBlockKeys.type];
       final colorAction = [OptionAction.divider, OptionAction.color];
       final alignAction = [OptionAction.divider, OptionAction.align];
       final depthAction = [OptionAction.depth];
+      final turnIntoAction = [OptionAction.turnInto];
 
       final List<OptionAction> actions = [
         ...standardActions,
-        if (supportColorBuilderTypes.contains(entry.key)) ...colorAction,
-        if (supportAlignBuilderType.contains(entry.key)) ...alignAction,
-        if (supportDepthBuilderType.contains(entry.key)) ...depthAction,
+        if (EditorOptionActionType.turnInto.supportTypes.contains(entry.key))
+          ...turnIntoAction,
+        if (EditorOptionActionType.color.supportTypes.contains(entry.key))
+          ...colorAction,
+        if (EditorOptionActionType.align.supportTypes.contains(entry.key))
+          ...alignAction,
+        if (EditorOptionActionType.depth.supportTypes.contains(entry.key))
+          ...depthAction,
       ];
 
       if (UniversalPlatform.isDesktop) {
